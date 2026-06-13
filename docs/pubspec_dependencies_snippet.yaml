@@ -1,0 +1,4 @@
+dependencies:
+  http: any
+  shared_preferences: any
+  geolocator: any
