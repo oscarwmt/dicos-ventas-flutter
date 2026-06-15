@@ -7,6 +7,7 @@ class Venta {
   final double total;
   final String estado;
   final int lineas;
+  final String invoiceStatus;
 
   Venta({
     required this.id,
@@ -17,7 +18,10 @@ class Venta {
     required this.total,
     required this.estado,
     required this.lineas,
+    required this.invoiceStatus,
   });
+
+  bool get estaFacturada => invoiceStatus == 'invoiced';
 
   factory Venta.fromJson(Map<String, dynamic> json) {
     return Venta(
@@ -26,9 +30,10 @@ class Venta {
       cliente: json['cliente'] ?? 'Desconocido',
       fecha: json['fecha'] ?? '',
       fechaRaw: json['fecha_raw'] ?? '',
-      total: (json['total'] ?? 0).toDouble(),
+      total: (json['total'] ?? 0.0).toDouble(),
       estado: json['estado'] ?? '',
       lineas: json['lineas'] ?? 0,
+      invoiceStatus: json['invoice_status'] ?? 'no',
     );
   }
 }

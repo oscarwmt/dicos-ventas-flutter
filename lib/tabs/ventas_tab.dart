@@ -14,7 +14,7 @@ class _VentasTabState extends State<VentasTab> {
   List<Venta> _filtradas = [];
   bool _isLoading = true;
   String _error = '';
-  String _filtroTiempo = 'todas';
+  String _filtroTiempo = 'semana';
   final TextEditingController _clienteController = TextEditingController();
 
   @override
@@ -70,12 +70,15 @@ class _VentasTabState extends State<VentasTab> {
               fecha.month == ahora.month &&
               fecha.day == ahora.day;
         } else if (_filtroTiempo == 'semana') {
-          final inicioSemana = ahora.subtract(Duration(days: ahora.weekday - 1));
+          final inicioSemana = ahora.subtract(
+            Duration(days: ahora.weekday - 1),
+          );
           coincideFecha = fecha.isAfter(
             DateTime(inicioSemana.year, inicioSemana.month, inicioSemana.day),
           );
         } else if (_filtroTiempo == 'mes') {
-          coincideFecha = fecha.year == ahora.year && fecha.month == ahora.month;
+          coincideFecha =
+              fecha.year == ahora.year && fecha.month == ahora.month;
         }
       }
 
@@ -104,20 +107,6 @@ class _VentasTabState extends State<VentasTab> {
     }
 
     return '\$${buffer.toString()}';
-  }
-
-  Color _estadoColor(String estado) {
-    if (estado == 'sale') return Colors.green;
-    if (estado == 'draft') return Colors.orange;
-    if (estado == 'cancel') return Colors.red;
-    return Colors.grey;
-  }
-
-  String _estadoTexto(String estado) {
-    if (estado == 'sale') return 'Confirmada';
-    if (estado == 'draft') return 'Borrador';
-    if (estado == 'cancel') return 'Cancelada';
-    return estado;
   }
 
   @override
@@ -236,10 +225,16 @@ class _VentasTabState extends State<VentasTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
                 Text(
                   value,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -252,9 +247,7 @@ class _VentasTabState extends State<VentasTab> {
 
   Widget _buildLista() {
     if (_filtradas.isEmpty) {
-      return const Center(
-        child: Text('No hay ventas para este filtro.'),
-      );
+      return const Center(child: Text('No hay ventas para este filtro.'));
     }
 
     return RefreshIndicator(
@@ -262,7 +255,8 @@ class _VentasTabState extends State<VentasTab> {
       color: const Color(0xFF8B2B2B),
       child: ListView.separated(
         itemCount: _filtradas.length,
-        separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
+        separatorBuilder: (_, _) =>
+            Divider(height: 1, color: Colors.grey.shade200),
         itemBuilder: (context, index) {
           final venta = _filtradas[index];
 
@@ -284,7 +278,25 @@ class _VentasTabState extends State<VentasTab> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: Text('${venta.nombre} · ${venta.fecha} · ${venta.lineas} líneas'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${venta.nombre} · ${venta.fecha} · ${venta.lineas} líneas',
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  venta.estaFacturada ? 'FACTURADA' : 'NO FACTURADA',
+                  style: TextStyle(
+                    color: venta.estaFacturada
+                        ? Colors.green.shade700
+                        : Colors.orange.shade800,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -303,9 +315,57 @@ class _VentasTabState extends State<VentasTab> {
                 ),
               ],
             ),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (_) => Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Folio: ${venta.nombre}",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text("Cliente: ${venta.cliente}"),
+                      Text("Fecha: ${venta.fecha}"),
+                      const SizedBox(height: 10),
+                      Text(
+                        "Estado Factura: ${venta.estaFacturada ? 'Facturada' : 'No Facturada'}",
+                        style: TextStyle(
+                          color: venta.estaFacturada
+                              ? Colors.green.shade700
+                              : Colors.orange.shade800,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  Color _estadoColor(String estado) {
+    if (estado == 'sale') return Colors.green;
+    if (estado == 'draft') return Colors.orange;
+    if (estado == 'cancel') return Colors.red;
+    return Colors.grey;
+  }
+
+  String _estadoTexto(String estado) {
+    if (estado == 'sale') return 'Confirmada';
+    if (estado == 'draft') return 'Borrador';
+    if (estado == 'cancel') return 'Cancelada';
+    return estado;
   }
 }
