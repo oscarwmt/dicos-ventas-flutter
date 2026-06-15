@@ -18,7 +18,8 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
   final _telefonoController = TextEditingController();
   final _emailController = TextEditingController();
   final _direccionController = TextEditingController();
-  final _actividadController = TextEditingController();
+
+  // Eliminamos _actividadController porque ahora será un selector
   final _contactoNombreController = TextEditingController();
   final _contactoTelefonoController = TextEditingController();
   final _contactoEmailController = TextEditingController();
@@ -30,11 +31,13 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
   List<Map<String, dynamic>> _regiones = [];
   List<Map<String, dynamic>> _comunas = [];
   List<Map<String, dynamic>> _sectores = [];
+  List<Map<String, dynamic>> _actividades = []; // NUEVO: Lista de actividades
   List<Map<String, dynamic>> _comunasFiltradas = [];
 
   Map<String, dynamic>? _regionSeleccionada;
   Map<String, dynamic>? _comunaSeleccionada;
   Map<String, dynamic>? _sectorSeleccionado;
+  Map<String, dynamic>? _actividadSeleccionada; // NUEVO: Actividad elegida
 
   double? _lat;
   double? _lng;
@@ -45,7 +48,6 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
     _telefonoController.text = widget.cliente.telefono;
     _emailController.text = widget.cliente.email;
     _direccionController.text = widget.cliente.direccion;
-    _actividadController.text = widget.cliente.actividad;
     _cargarDatosFormulario();
   }
 
@@ -54,7 +56,6 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
     _telefonoController.dispose();
     _emailController.dispose();
     _direccionController.dispose();
-    _actividadController.dispose();
     _contactoNombreController.dispose();
     _contactoTelefonoController.dispose();
     _contactoEmailController.dispose();
@@ -68,10 +69,15 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
       final regiones = List<Map<String, dynamic>>.from(data['regiones'] ?? []);
       final comunas = List<Map<String, dynamic>>.from(data['comunas'] ?? []);
       final sectores = List<Map<String, dynamic>>.from(data['sectores'] ?? []);
+      // NUEVO: Extraemos las actividades del JSON
+      final actividades = List<Map<String, dynamic>>.from(
+        data['actividades'] ?? [],
+      );
 
       Map<String, dynamic>? comunaInicial;
       Map<String, dynamic>? regionInicial;
       Map<String, dynamic>? sectorInicial;
+      Map<String, dynamic>? actividadInicial;
 
       for (final comuna in comunas) {
         if (comuna['id'] == widget.cliente.comunaId) {
@@ -96,6 +102,14 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
         }
       }
 
+      // NUEVO: Buscar si el cliente ya tenía una actividad y pre-seleccionarla
+      for (final actividad in actividades) {
+        if (actividad['name'] == widget.cliente.actividad) {
+          actividadInicial = actividad;
+          break;
+        }
+      }
+
       final comunasFiltradas = regionInicial == null
           ? <Map<String, dynamic>>[]
           : comunas
@@ -108,9 +122,11 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
         _regiones = regiones;
         _comunas = comunas;
         _sectores = sectores;
+        _actividades = actividades; // Guardamos la lista en el estado
         _regionSeleccionada = regionInicial;
         _comunaSeleccionada = comunaInicial;
         _sectorSeleccionado = sectorInicial;
+        _actividadSeleccionada = actividadInicial; // Pre-seleccionamos
         _comunasFiltradas = comunasFiltradas;
         _isLoading = false;
       });
@@ -233,8 +249,11 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_comunaSeleccionada == null || _sectorSeleccionado == null) {
-      _mostrarError('Debes seleccionar comuna y sector.');
+    // Actualizamos las validaciones para incluir la actividad
+    if (_comunaSeleccionada == null ||
+        _sectorSeleccionado == null ||
+        _actividadSeleccionada == null) {
+      _mostrarError('Debes seleccionar comuna, sector y actividad comercial.');
       return;
     }
 
@@ -252,7 +271,9 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
         'direccion': _direccionController.text.trim(),
         'comuna_id': _comunaSeleccionada!['id'],
         'sector_id': _sectorSeleccionado!['id'],
-        'actividad': _actividadController.text.trim(),
+        'actividad': _nombreItem(
+          _actividadSeleccionada,
+        ), // Enviamos el nombre de la actividad
         'contacto_nombre': _contactoNombreController.text.trim(),
         'contacto_telefono': _contactoTelefonoController.text.trim(),
         'contacto_email': _contactoEmailController.text.trim(),
@@ -382,12 +403,19 @@ class _CompletarFichaScreenState extends State<CompletarFichaScreen> {
               validator: _obligatorio,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _actividadController,
-              decoration: const InputDecoration(
-                labelText: 'Actividad comercial *',
-              ),
-              validator: _obligatorio,
+
+            // NUEVO: Reemplazamos el TextFormField por el _selector para la actividad
+            _selector(
+              label: 'Actividad comercial *',
+              value: _actividadSeleccionada,
+              onTap: () async {
+                final item = await _buscarSeleccion(
+                  titulo: 'Buscar actividad',
+                  items: _actividades,
+                );
+                if (item == null) return;
+                setState(() => _actividadSeleccionada = item);
+              },
             ),
 
             const SizedBox(height: 20),

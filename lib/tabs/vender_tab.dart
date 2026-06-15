@@ -114,9 +114,123 @@ class _VenderTabState extends State<VenderTab> {
       return;
     }
 
+    // MEJORA 3 (Actualizada): Lanzar el cuadro de deudas como un Pop-Up
+    if (cliente.bloqueado) {
+      await _mostrarAlertaBloqueo(cliente);
+    }
+
     await _cargarSucursales(cliente);
-    await _mostrarSelectorSucursal();
+
+    // Solo mostramos selector de sucursal automático si NO está bloqueado
+    if (!cliente.bloqueado) {
+      await _mostrarSelectorSucursal();
+    }
+
     await _cargarProductos(cliente);
+  }
+
+  // MÉTODO NUEVO: Muestra el pop-up financiero que el vendedor debe cerrar
+  Future<void> _mostrarAlertaBloqueo(Cliente cliente) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // Obliga a tocar el botón para cerrarlo
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xFFD41C1C),
+                size: 30,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'CLIENTE BLOQUEADO',
+                  style: TextStyle(
+                    color: Color(0xFFD41C1C),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Este cliente presenta problemas de pago.\nSolo puedes realizarle cotizaciones.',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'ESTADO DE CUENTA',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const Divider(height: 16),
+              _filaFinanciera(
+                'Límite Autorizado:',
+                _money(cliente.limiteCredito.toDouble()),
+              ),
+              const SizedBox(height: 8),
+              _filaFinanciera(
+                'Deuda Total Vigente:',
+                _money(cliente.deudaActual.toDouble()),
+                esAlerta: cliente.deudaActual >= cliente.limiteCredito,
+              ),
+              const SizedBox(height: 8),
+              _filaFinanciera(
+                'Monto Vencido:',
+                _money(cliente.montoVencido.toDouble()),
+                esCritico: cliente.montoVencido > 0,
+              ),
+              const Divider(height: 16),
+              Text(
+                'Motivo: ${cliente.razonBloqueo.isNotEmpty ? cliente.razonBloqueo : "Registra problemas de pago"}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD41C1C),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context),
+                child: const Text(
+                  'Entendido, continuar cotizando',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _cargarSucursales(Cliente cliente) async {
@@ -316,6 +430,18 @@ class _VenderTabState extends State<VenderTab> {
     return '\$${buffer.toString()}';
   }
 
+  Color _obtenerColorFondoStock(double stock) {
+    if (stock <= 0) return Colors.red.shade50;
+    if (stock < 5) return Colors.amber.shade50;
+    return Colors.green.shade50;
+  }
+
+  Color _obtenerColorBordeStock(double stock) {
+    if (stock <= 0) return Colors.red.shade200;
+    if (stock < 5) return Colors.amber.shade300;
+    return Colors.green.shade200;
+  }
+
   Future<void> _confirmarVenta() async {
     if (_clienteSeleccionado == null || _carrito.isEmpty) return;
 
@@ -375,6 +501,8 @@ class _VenderTabState extends State<VenderTab> {
   }
 
   void _mostrarCarrito() {
+    final esCotizacion = _clienteSeleccionado?.bloqueado == true;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -482,13 +610,17 @@ class _VenderTabState extends State<VenderTab> {
                         height: 52,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFD41C1C),
+                            backgroundColor: esCotizacion
+                                ? Colors.orange.shade800
+                                : const Color(0xFFD41C1C),
                             foregroundColor: Colors.white,
                           ),
                           onPressed: _carrito.isEmpty ? null : _confirmarVenta,
-                          child: const Text(
-                            'Confirmar nota de venta',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                          child: Text(
+                            esCotizacion
+                                ? 'Generar Cotización'
+                                : 'Confirmar nota de venta',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -545,8 +677,10 @@ class _VenderTabState extends State<VenderTab> {
       body: Column(
         children: [
           _buildClienteCompacto(),
+          // Se eliminó el cuadro de alerta inline de aquí para mantenerlo limpio
           if (_clienteSeleccionado != null &&
-              !_clienteSeleccionado!.fichaIncompleta)
+              !_clienteSeleccionado!.fichaIncompleta &&
+              !_clienteSeleccionado!.bloqueado)
             _buildDireccionCompacta(),
           if (_clienteSeleccionado != null &&
               !_clienteSeleccionado!.fichaIncompleta)
@@ -575,7 +709,37 @@ class _VenderTabState extends State<VenderTab> {
         items: _clientes.map((c) {
           return DropdownMenuItem<int>(
             value: c.id,
-            child: Text(c.nombre, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    c.nombre,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (c.bloqueado)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD41C1C),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'BLOQUEADO',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           );
         }).toList(),
         onChanged: (id) {
@@ -584,6 +748,40 @@ class _VenderTabState extends State<VenderTab> {
           _seleccionarCliente(cliente);
         },
       ),
+    );
+  }
+
+  Widget _filaFinanciera(
+    String etiqueta,
+    String valor, {
+    bool esAlerta = false,
+    bool esCritico = false,
+  }) {
+    Color colorTexto = Colors.black87;
+    FontWeight pesoTexto = FontWeight.w600;
+
+    if (esAlerta) colorTexto = Colors.orange.shade800;
+    if (esCritico) {
+      colorTexto = const Color(0xFFD41C1C);
+      pesoTexto = FontWeight.w900;
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          etiqueta,
+          style: const TextStyle(fontSize: 13, color: Colors.black54),
+        ),
+        Text(
+          valor,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: pesoTexto,
+            color: colorTexto,
+          ),
+        ),
+      ],
     );
   }
 
@@ -836,9 +1034,9 @@ class _VenderTabState extends State<VenderTab> {
           opacity: sinStock ? 0.45 : 1,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _obtenerColorFondoStock(p.stockReal),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: _obtenerColorBordeStock(p.stockReal)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -930,13 +1128,24 @@ class _VenderTabState extends State<VenderTab> {
         final sinStock = p.stockReal <= 0;
 
         return Card(
+          color: _obtenerColorFondoStock(p.stockReal),
           margin: const EdgeInsets.only(bottom: 8),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            side: BorderSide(color: _obtenerColorBordeStock(p.stockReal)),
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: ListTile(
             leading: Icon(
               Icons.inventory_2,
               color: sinStock ? Colors.grey : const Color(0xFFD41C1C),
             ),
-            title: Text(p.nombre, maxLines: 2, overflow: TextOverflow.ellipsis),
+            title: Text(
+              p.nombre,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             subtitle: Text('${p.codigo} · Stock: ${p.stockReal.round()}'),
             trailing: SizedBox(
               width: 120,
@@ -966,6 +1175,8 @@ class _VenderTabState extends State<VenderTab> {
   }
 
   Widget _buildBarraCarrito() {
+    final esCotizacion = _clienteSeleccionado?.bloqueado == true;
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
@@ -991,7 +1202,9 @@ class _VenderTabState extends State<VenderTab> {
             height: 46,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFD41C1C),
+                backgroundColor: esCotizacion
+                    ? Colors.orange.shade800
+                    : const Color(0xFFD41C1C),
                 foregroundColor: Colors.white,
                 disabledBackgroundColor: Colors.grey.shade300,
                 shape: RoundedRectangleBorder(
@@ -999,9 +1212,11 @@ class _VenderTabState extends State<VenderTab> {
                 ),
               ),
               onPressed: _cantidadCarrito == 0 ? null : _mostrarCarrito,
-              child: const Text(
-                'Ver carrito y confirmar',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              child: Text(
+                esCotizacion
+                    ? 'Ver carrito (Cotización)'
+                    : 'Ver carrito y confirmar',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -1011,6 +1226,7 @@ class _VenderTabState extends State<VenderTab> {
   }
 }
 
+// ... [La clase VentaOkScreen queda exactamente igual en el mismo archivo] ...
 class VentaOkScreen extends StatelessWidget {
   final String folio;
   final double total;
