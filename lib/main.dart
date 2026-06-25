@@ -8,6 +8,9 @@ import 'models/cliente.dart';
 import 'services/api_service.dart';
 import 'tabs/vender_tab.dart';
 import 'tabs/ventas_tab.dart';
+import 'services/session_manager.dart';
+import 'screens/crear_cliente_screen.dart';
+import 'tabs/dashboard_tab.dart';
 
 void main() {
   runApp(const DicosVentasApp());
@@ -21,6 +24,11 @@ class DicosVentasApp extends StatelessWidget {
     return MaterialApp(
       title: 'DICOS Ventas',
       debugShowCheckedModeBanner: false,
+      navigatorKey: SessionManager.navigatorKey,
+      routes: {
+        '/login': (_) => const LoginScreen(),
+        '/home': (_) => const HomeScreen(),
+      },
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF8B2B2B)),
         useMaterial3: true,
@@ -60,9 +68,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return _logged ? const HomeScreen() : const LoginScreen();
@@ -152,7 +158,11 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.storefront, size: 70, color: Color(0xFF8B2B2B)),
+                Image.asset(
+                  'assets/images/logo_dicos.jpg',
+                  height: 120,
+                  fit: BoxFit.contain,
+                ),
                 const SizedBox(height: 12),
                 const Text(
                   'DICOS Ventas',
@@ -217,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
 
   final List<Widget> _pantallas = const [
-    InicioTab(),
+    DashboardTab(),
     ClientesTab(),
     VenderTab(),
     Center(child: Text('Pantalla CRM (En construcción)')),
@@ -253,9 +263,15 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Inicio'),
           BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Clientes'),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Vender'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart),
+            label: 'Vender',
+          ),
           BottomNavigationBarItem(icon: Icon(Icons.task_alt), label: 'CRM'),
-          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Ventas'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long),
+            label: 'Ventas',
+          ),
         ],
       ),
       floatingActionButton: _index == 0
@@ -302,7 +318,10 @@ class _InicioTabState extends State<InicioTab> {
         automaticallyImplyLeading: false,
         title: Text(
           'Hola, $_name',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
       body: GridView.count(
@@ -325,10 +344,7 @@ class _InicioCard extends StatelessWidget {
   final String title;
   final IconData icon;
 
-  const _InicioCard({
-    required this.title,
-    required this.icon,
-  });
+  const _InicioCard({required this.title, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -386,6 +402,7 @@ class _ClientesTabState extends State<ClientesTab> {
         _clientes = lista.map((e) => Cliente.fromJson(e)).toList();
         _filtrados = _clientes;
         _loading = false;
+        _error = '';
       });
     } catch (e) {
       setState(() {
@@ -431,63 +448,84 @@ class _ClientesTabState extends State<ClientesTab> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF8B2B2B)))
-          : _error.isNotEmpty
-              ? Center(child: Text(_error))
-              : Column(
-                  children: [
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        controller: _buscarController,
-                        decoration: const InputDecoration(
-                          labelText: 'Buscar cliente',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _cargarClientes,
-                        child: ListView.separated(
-                          itemCount: _filtrados.length,
-                          separatorBuilder: (_, _) => Divider(height: 1, color: Colors.grey.shade200),
-                          itemBuilder: (context, index) {
-                            final c = _filtrados[index];
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF8B2B2B),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.person_add),
+        label: const Text('Nuevo'),
+        onPressed: () async {
+          final creado = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CrearClienteScreen()),
+          );
 
-                            return ListTile(
-                              tileColor: Colors.white,
-                              leading: CircleAvatar(
-                                backgroundColor: _estadoColor(c),
-                                foregroundColor: Colors.white,
-                                child: Text(
-                                  c.nombre.isEmpty ? '?' : c.nombre[0].toUpperCase(),
-                                ),
-                              ),
-                              title: Text(
-                                c.nombre,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text('${c.rut} · ${c.ciudad}'),
-                              trailing: Text(
-                                _estadoTexto(c),
-                                style: TextStyle(
-                                  color: _estadoColor(c),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+          if (creado == true) {
+            await _cargarClientes();
+          }
+        },
+      ),
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF8B2B2B)),
+            )
+          : _error.isNotEmpty
+          ? Center(child: Text(_error))
+          : Column(
+              children: [
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(12),
+                  child: TextField(
+                    controller: _buscarController,
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar cliente',
+                      prefixIcon: Icon(Icons.search),
                     ),
-                  ],
+                  ),
                 ),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _cargarClientes,
+                    child: ListView.separated(
+                      itemCount: _filtrados.length,
+                      separatorBuilder: (_, _) =>
+                          Divider(height: 1, color: Colors.grey.shade200),
+                      itemBuilder: (context, index) {
+                        final c = _filtrados[index];
+
+                        return ListTile(
+                          tileColor: Colors.white,
+                          leading: CircleAvatar(
+                            backgroundColor: _estadoColor(c),
+                            foregroundColor: Colors.white,
+                            child: Text(
+                              c.nombre.isEmpty
+                                  ? '?'
+                                  : c.nombre[0].toUpperCase(),
+                            ),
+                          ),
+                          title: Text(
+                            c.nombre,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text('${c.rut} · ${c.ciudad}'),
+                          trailing: Text(
+                            _estadoTexto(c),
+                            style: TextStyle(
+                              color: _estadoColor(c),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'session_manager.dart';
 
 class ApiService {
   static Future<Map<String, dynamic>> get(String endpoint) async {
@@ -99,7 +100,7 @@ class ApiService {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (response.statusCode == 401 || response.statusCode == 403) {
-        await prefs.clear();
+        await SessionManager.logout();
       }
 
       throw Exception(data['error'] ?? 'Error del servidor');
