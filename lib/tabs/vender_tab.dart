@@ -389,10 +389,38 @@ class _VenderTabState extends State<VenderTab> {
     });
   }
 
-  void _agregarCarrito(Producto producto) {
-    if (producto.stockReal <= 0) return;
+  int _stockDisponible(Producto producto) {
+    return producto.stockReal.floor();
+  }
+
+  void _mostrarStockMaximo(Producto producto) {
+    if (!mounted) return;
+
+    final stock = _stockDisponible(producto);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Stock disponible: $stock unidad${stock == 1 ? '' : 'es'}',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  bool _agregarCarrito(Producto producto) {
+    final stockDisponible = _stockDisponible(producto);
+
+    if (stockDisponible <= 0) return false;
 
     final index = _carrito.indexWhere((x) => x.producto.id == producto.id);
+    final cantidadActual = index >= 0 ? _carrito[index].cantidad : 0;
+
+    if (cantidadActual >= stockDisponible) {
+      _mostrarStockMaximo(producto);
+      return false;
+    }
 
     setState(() {
       if (index >= 0) {
@@ -401,21 +429,193 @@ class _VenderTabState extends State<VenderTab> {
         _carrito.add(CarritoItem(producto: producto));
       }
     });
+
+    return true;
   }
 
-  void _quitarCarrito(CarritoItem item) {
+  Future<bool> _confirmarEliminarProducto(CarritoItem item) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Eliminar producto'),
+          content: Text(
+            '¿Deseas eliminar "${item.producto.nombre}" del carrito?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD41C1C),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmar == true;
+  }
+
+  Future<bool> _quitarCarrito(CarritoItem item) async {
+    if (item.cantidad <= 1) {
+      final confirmar = await _confirmarEliminarProducto(item);
+
+      if (!confirmar) return false;
+
+      if (!mounted) return false;
+
+      setState(() {
+        _carrito.removeWhere((x) => x.producto.id == item.producto.id);
+      });
+
+      return true;
+    }
+
     setState(() {
       item.cantidad--;
-      if (item.cantidad <= 0) {
-        _carrito.removeWhere((x) => x.producto.id == item.producto.id);
-      }
     });
+
+    return true;
   }
 
   double get _totalCarrito => _carrito.fold(0, (sum, item) => sum + item.total);
 
   int get _cantidadCarrito =>
       _carrito.fold(0, (sum, item) => sum + item.cantidad);
+
+  int _cantidadProducto(Producto producto) {
+    final index = _carrito.indexWhere((e) => e.producto.id == producto.id);
+
+    if (index < 0) return 0;
+
+    return _carrito[index].cantidad;
+  }
+
+  Widget _buildControlProducto(Producto producto, {bool compacto = true}) {
+    final sinStock = producto.stockReal <= 0;
+    final cantidad = _cantidadProducto(producto);
+
+    late final Widget contenido;
+
+    if (sinStock) {
+      contenido = const Text(
+        'Sin stock',
+        key: ValueKey('sin_stock'),
+        style: TextStyle(fontSize: 10.5, color: Colors.grey),
+      );
+    } else if (cantidad == 0) {
+      contenido = IconButton(
+        key: ValueKey('agregar_${producto.id}'),
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        onPressed: () => _agregarCarrito(producto),
+        icon: const Icon(Icons.add_circle, color: Color(0xFFD41C1C)),
+      );
+    } else {
+      contenido = AnimatedContainer(
+        key: ValueKey('cantidad_${producto.id}'),
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.symmetric(
+          horizontal: compacto ? 4 : 6,
+          vertical: compacto ? 2 : 4,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.red.shade50,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.red.shade100),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () async {
+                final item = _carrito.firstWhere(
+                  (e) => e.producto.id == producto.id,
+                );
+                await _quitarCarrito(item);
+              },
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 120),
+                scale: 1,
+                child: Icon(
+                  Icons.remove_circle,
+                  color: Colors.red.shade700,
+                  size: compacto ? 21 : 24,
+                ),
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: compacto ? 7 : 9),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(opacity: animation, child: child),
+                  );
+                },
+                child: Text(
+                  '$cantidad',
+                  key: ValueKey('contador_${producto.id}_$cantidad'),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: compacto ? 13 : 15,
+                  ),
+                ),
+              ),
+            ),
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: cantidad >= _stockDisponible(producto)
+                  ? () => _mostrarStockMaximo(producto)
+                  : () => _agregarCarrito(producto),
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 120),
+                scale: 1,
+                child: Icon(
+                  Icons.add_circle,
+                  color: cantidad >= _stockDisponible(producto)
+                      ? Colors.grey
+                      : const Color(0xFFD41C1C),
+                  size: compacto ? 21 : 24,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) {
+        return ScaleTransition(
+          scale: animation,
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+      child: contenido,
+    );
+  }
 
   String _money(double valor) {
     final entero = valor.round().toString();
@@ -552,9 +752,12 @@ class _VenderTabState extends State<VenderTab> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          onPressed: () {
-                                            _quitarCarrito(item);
-                                            setModalState(() {});
+                                          onPressed: () async {
+                                            final actualizado =
+                                                await _quitarCarrito(item);
+                                            if (actualizado) {
+                                              setModalState(() {});
+                                            }
                                           },
                                           icon: const Icon(
                                             Icons.remove_circle_outline,
@@ -568,8 +771,12 @@ class _VenderTabState extends State<VenderTab> {
                                         ),
                                         IconButton(
                                           onPressed: () {
-                                            _agregarCarrito(item.producto);
-                                            setModalState(() {});
+                                            final actualizado = _agregarCarrito(
+                                              item.producto,
+                                            );
+                                            if (actualizado) {
+                                              setModalState(() {});
+                                            }
                                           },
                                           icon: const Icon(
                                             Icons.add_circle_outline,
@@ -666,12 +873,16 @@ class _VenderTabState extends State<VenderTab> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        toolbarHeight: 74,
+        toolbarHeight: 56,
         backgroundColor: const Color(0xFF8B2B2B),
         automaticallyImplyLeading: false,
         title: const Text(
           'Nueva Nota de Venta',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
         ),
       ),
       body: Column(
@@ -695,16 +906,16 @@ class _VenderTabState extends State<VenderTab> {
   Widget _buildClienteCompacto() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
       child: DropdownButtonFormField<int>(
         isExpanded: true,
         initialValue: _clienteSeleccionado?.id,
         decoration: const InputDecoration(
           isDense: true,
           labelText: 'Cliente',
-          prefixIcon: Icon(Icons.people),
+          prefixIcon: Icon(Icons.people, size: 20),
           border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         ),
         items: _clientes.map((c) {
           return DropdownMenuItem<int>(
@@ -802,47 +1013,39 @@ class _VenderTabState extends State<VenderTab> {
 
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
       child: InkWell(
         onTap: () async {
           await _mostrarSelectorSucursal();
           if (mounted) setState(() {});
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.blue.shade200),
           ),
           child: Row(
             children: [
-              const Icon(Icons.local_shipping, color: Color(0xFF1A237E)),
-              const SizedBox(width: 10),
+              const Icon(
+                Icons.local_shipping,
+                color: Color(0xFF1A237E),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
               Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      const TextSpan(
-                        text: 'Entrega: ',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextSpan(
-                        text: '$titulo · $direccion',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                  maxLines: 2,
+                child: Text(
+                  '$titulo · $direccion',
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -851,6 +1054,7 @@ class _VenderTabState extends State<VenderTab> {
                 style: TextStyle(
                   color: Color(0xFF8B2B2B),
                   fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
             ],
@@ -863,99 +1067,123 @@ class _VenderTabState extends State<VenderTab> {
   Widget _buildFiltrosCompactos() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
-            controller: _buscarController,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Buscar producto',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          SizedBox(
+            height: 44,
+            child: TextField(
+              controller: _buscarController,
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Buscar producto',
+                prefixIcon: Icon(Icons.search, size: 20),
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: _categoria,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Categoría',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+                child: SizedBox(
+                  height: 42,
+                  child: DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: _categoria,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Categoría',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 7,
+                      ),
                     ),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('Todas')),
+                      ..._categorias.map(
+                        (c) => DropdownMenuItem(value: c, child: Text(c)),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      _categoria = v ?? '';
+                      _aplicarFiltros();
+                    },
                   ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('Todas')),
-                    ..._categorias.map(
-                      (c) => DropdownMenuItem(value: c, child: Text(c)),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    _categoria = v ?? '';
-                    _aplicarFiltros();
-                  },
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
-                child: DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: _marca,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Marca',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+                child: SizedBox(
+                  height: 42,
+                  child: DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: _marca,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Marca',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 7,
+                      ),
                     ),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('Todas')),
+                      ..._marcas.map(
+                        (m) => DropdownMenuItem(value: m, child: Text(m)),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      _marca = v ?? '';
+                      _aplicarFiltros();
+                    },
                   ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('Todas')),
-                    ..._marcas.map(
-                      (m) => DropdownMenuItem(value: m, child: Text(m)),
-                    ),
-                  ],
-                  onChanged: (v) {
-                    _marca = v ?? '';
-                    _aplicarFiltros();
-                  },
                 ),
               ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: CheckboxListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: const Color(0xFF8B2B2B),
-                  title: const Text(
-                    'Solo stock',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  value: _soloStock,
-                  onChanged: (v) {
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'Solo productos con stock',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
                     setState(() {
-                      _soloStock = v ?? false;
+                      _soloStock = !_soloStock;
                     });
                     _aplicarFiltros();
                   },
-                  controlAffinity: ListTileControlAffinity.leading,
+                  child: Container(
+                    height: 42,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: _soloStock
+                          ? const Color(0xFF8B2B2B)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _soloStock
+                            ? const Color(0xFF8B2B2B)
+                            : Colors.grey.shade300,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.inventory,
+                      size: 20,
+                      color: _soloStock ? Colors.white : Colors.grey.shade700,
+                    ),
+                  ),
                 ),
               ),
-
+              const SizedBox(width: 2),
               IconButton(
                 tooltip: 'Vista grilla',
+                visualDensity: VisualDensity.compact,
                 icon: Icon(
                   Icons.grid_view,
                   color: !_vistaLista ? const Color(0xFFD41C1C) : Colors.grey,
@@ -966,9 +1194,9 @@ class _VenderTabState extends State<VenderTab> {
                   });
                 },
               ),
-
               IconButton(
                 tooltip: 'Vista lista',
+                visualDensity: VisualDensity.compact,
                 icon: Icon(
                   Icons.view_list,
                   color: _vistaLista ? const Color(0xFFD41C1C) : Colors.grey,
@@ -1018,11 +1246,11 @@ class _VenderTabState extends State<VenderTab> {
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
       itemCount: _filtrados.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 0.86,
+        childAspectRatio: 1.02,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
       ),
@@ -1045,34 +1273,34 @@ class _VenderTabState extends State<VenderTab> {
                   child: Center(
                     child: Icon(
                       Icons.inventory_2,
-                      size: 44,
+                      size: 34,
                       color: Colors.brown.shade300,
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(9, 6, 9, 2),
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 1),
                   child: Text(
                     p.nombre,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
-                      fontSize: 12.5,
+                      fontSize: 12,
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
                     '${p.codigo} · Stock: ${p.stockReal.round()}',
-                    style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(9, 4, 6, 6),
+                  padding: const EdgeInsets.fromLTRB(8, 2, 5, 4),
                   child: Row(
                     children: [
                       Expanded(
@@ -1081,33 +1309,13 @@ class _VenderTabState extends State<VenderTab> {
                           style: const TextStyle(
                             color: Color(0xFFD41C1C),
                             fontWeight: FontWeight.w900,
-                            fontSize: 12.5,
+                            fontSize: 12,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      sinStock
-                          ? const Text(
-                              'Sin stock',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: Colors.grey,
-                              ),
-                            )
-                          : IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 32,
-                                minHeight: 32,
-                              ),
-                              onPressed: () => _agregarCarrito(p),
-                              icon: const Icon(
-                                Icons.add_circle,
-                                color: Color(0xFFD41C1C),
-                              ),
-                            ),
+                      _buildControlProducto(p),
                     ],
                   ),
                 ),
@@ -1148,7 +1356,7 @@ class _VenderTabState extends State<VenderTab> {
             ),
             subtitle: Text('${p.codigo} · Stock: ${p.stockReal.round()}'),
             trailing: SizedBox(
-              width: 120,
+              width: 145,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -1157,14 +1365,7 @@ class _VenderTabState extends State<VenderTab> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 8),
-                  if (!sinStock)
-                    IconButton(
-                      icon: const Icon(
-                        Icons.add_circle,
-                        color: Color(0xFFD41C1C),
-                      ),
-                      onPressed: () => _agregarCarrito(p),
-                    ),
+                  _buildControlProducto(p, compacto: false),
                 ],
               ),
             ),

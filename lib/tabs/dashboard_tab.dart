@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/session_manager.dart';
 
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key});
@@ -47,6 +48,36 @@ class _DashboardTabState extends State<DashboardTab> {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _confirmarCerrarSesion() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cerrar sesión'),
+          content: const Text('¿Deseas cerrar la sesión de DICOS Ventas?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD41C1C),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Cerrar sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar == true) {
+      await SessionManager.logout();
     }
   }
 
@@ -97,6 +128,45 @@ class _DashboardTabState extends State<DashboardTab> {
             ),
           ],
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            onSelected: (value) {
+              if (value == 'logout') {
+                _confirmarCerrarSesion();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'perfil',
+                enabled: false,
+                child: Text('Mi perfil'),
+              ),
+              PopupMenuItem(
+                value: 'config',
+                enabled: false,
+                child: Text('Configuración'),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, color: Color(0xFFD41C1C)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Cerrar sesión',
+                      style: TextStyle(
+                        color: Color(0xFFD41C1C),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: _loading
           ? const Center(
@@ -119,7 +189,6 @@ class _DashboardTabState extends State<DashboardTab> {
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 16),
-
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -167,14 +236,12 @@ class _DashboardTabState extends State<DashboardTab> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 20),
                   const Text(
                     'Alertas comerciales',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 10),
-
                   _AlertCard(
                     icon: Icons.assignment_late,
                     title: 'Fichas incompletas',

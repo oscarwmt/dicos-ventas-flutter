@@ -234,18 +234,6 @@ class _HomeScreenState extends State<HomeScreen> {
     VentasTab(),
   ];
 
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-
-    if (!mounted) return;
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -274,14 +262,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      floatingActionButton: _index == 0
-          ? FloatingActionButton(
-              backgroundColor: const Color(0xFF8B2B2B),
-              foregroundColor: Colors.white,
-              onPressed: _logout,
-              child: const Icon(Icons.logout),
-            )
-          : null,
     );
   }
 }
