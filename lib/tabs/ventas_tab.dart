@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/venta.dart';
+import 'editar_borrador_screen.dart'; // NUEVO IMPORT
 
 class VentasTab extends StatefulWidget {
   const VentasTab({super.key});
@@ -15,6 +16,7 @@ class _VentasTabState extends State<VentasTab> {
   bool _isLoading = true;
   String _error = '';
   String _filtroTiempo = 'semana';
+  String _filtroEstado = 'all';
   final TextEditingController _clienteController = TextEditingController();
 
   @override
@@ -31,8 +33,11 @@ class _VentasTabState extends State<VentasTab> {
   }
 
   Future<void> _cargarVentas() async {
+    setState(() {
+      _isLoading = true;
+    });
     try {
-      final data = await ApiService.get('ventas');
+      final data = await ApiService.get('ventas?status=$_filtroEstado');
       final lista = (data['ventas'] ?? []) as List;
 
       if (mounted) {
@@ -42,6 +47,7 @@ class _VentasTabState extends State<VentasTab> {
           _isLoading = false;
           _error = '';
         });
+        _aplicarFiltros();
       }
     } catch (e) {
       if (mounted) {
@@ -156,28 +162,70 @@ class _VentasTabState extends State<VentasTab> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: _filtroTiempo,
-            decoration: const InputDecoration(labelText: 'Periodo'),
-            items: const [
-              DropdownMenuItem(value: 'todas', child: Text('Todas las fechas')),
-              DropdownMenuItem(value: 'hoy', child: Text('Hoy')),
-              DropdownMenuItem(value: 'semana', child: Text('Esta semana')),
-              DropdownMenuItem(value: 'mes', child: Text('Este mes')),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _filtroTiempo = value);
-              _aplicarFiltros();
-            },
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _clienteController,
-            decoration: const InputDecoration(
-              labelText: 'Buscar por cliente',
-              prefixIcon: Icon(Icons.search),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment<String>(
+                  value: 'all',
+                  label: Text('Todas', style: TextStyle(fontSize: 12)),
+                ),
+                ButtonSegment<String>(
+                  value: 'draft',
+                  label: Text('Borradores', style: TextStyle(fontSize: 12)),
+                ),
+                ButtonSegment<String>(
+                  value: 'sale',
+                  label: Text('Confirmadas', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+              selected: <String>{_filtroEstado},
+              onSelectionChanged: (Set<String> newSelection) {
+                setState(() {
+                  _filtroEstado = newSelection.first;
+                });
+                _cargarVentas();
+              },
             ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: _filtroTiempo,
+                  decoration: const InputDecoration(
+                    labelText: 'Periodo',
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'todas', child: Text('Todas')),
+                    DropdownMenuItem(value: 'hoy', child: Text('Hoy')),
+                    DropdownMenuItem(value: 'semana', child: Text('Semana')),
+                    DropdownMenuItem(value: 'mes', child: Text('Mes')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _filtroTiempo = value);
+                    _aplicarFiltros();
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 6,
+                child: TextField(
+                  controller: _clienteController,
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar cliente',
+                    prefixIcon: Icon(Icons.search),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -318,33 +366,62 @@ class _VentasTabState extends State<VentasTab> {
             onTap: () {
               showModalBottomSheet(
                 context: context,
-                builder: (_) => Container(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Folio: ${venta.nombre}",
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                builder: (_) => SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Folio: ${venta.nombre}",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text("Cliente: ${venta.cliente}"),
-                      Text("Fecha: ${venta.fecha}"),
-                      const SizedBox(height: 10),
-                      Text(
-                        "Estado Factura: ${venta.estaFacturada ? 'Facturada' : 'No Facturada'}",
-                        style: TextStyle(
-                          color: venta.estaFacturada
-                              ? Colors.green.shade700
-                              : Colors.orange.shade800,
-                          fontWeight: FontWeight.bold,
+                        const SizedBox(height: 10),
+                        Text("Cliente: ${venta.cliente}"),
+                        Text("Fecha: ${venta.fecha}"),
+                        const SizedBox(height: 10),
+                        Text(
+                          "Estado Factura: ${venta.estaFacturada ? 'Facturada' : 'No Facturada'}",
+                          style: TextStyle(
+                            color: venta.estaFacturada
+                                ? Colors.green.shade700
+                                : Colors.orange.shade800,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        // FASE 2: BOTÓN PARA EDITAR SI ES BORRADOR
+                        if (venta.estado == 'draft')
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFD41C1C),
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.edit_document),
+                              label: const Text('Abrir y Editar Borrador'),
+                              onPressed: () {
+                                Navigator.pop(context); // Cierra el modal
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        EditarBorradorScreen(ventaId: venta.id),
+                                  ),
+                                ).then(
+                                  (_) => _cargarVentas(),
+                                ); // Recarga al volver
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               );

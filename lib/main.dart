@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'config/api_config.dart';
 import 'models/cliente.dart';
@@ -86,8 +87,34 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  String _versionText = 'Versión cargando...';
+
   bool _loading = false;
   String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+
+      if (!mounted) return;
+
+      setState(() {
+        _versionText = 'Versión ${info.version}+${info.buildNumber}';
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _versionText = 'Versión no disponible';
+      });
+    }
+  }
 
   Future<void> _login() async {
     setState(() {
@@ -123,6 +150,8 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
         _error = e.toString();
       });
@@ -205,6 +234,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Ingresar',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _versionText,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],

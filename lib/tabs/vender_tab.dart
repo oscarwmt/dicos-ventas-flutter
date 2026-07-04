@@ -114,14 +114,12 @@ class _VenderTabState extends State<VenderTab> {
       return;
     }
 
-    // MEJORA 3 (Actualizada): Lanzar el cuadro de deudas como un Pop-Up
     if (cliente.bloqueado) {
       await _mostrarAlertaBloqueo(cliente);
     }
 
     await _cargarSucursales(cliente);
 
-    // Solo mostramos selector de sucursal automático si NO está bloqueado
     if (!cliente.bloqueado) {
       await _mostrarSelectorSucursal();
     }
@@ -129,11 +127,10 @@ class _VenderTabState extends State<VenderTab> {
     await _cargarProductos(cliente);
   }
 
-  // MÉTODO NUEVO: Muestra el pop-up financiero que el vendedor debe cerrar
   Future<void> _mostrarAlertaBloqueo(Cliente cliente) async {
     await showDialog(
       context: context,
-      barrierDismissible: false, // Obliga a tocar el botón para cerrarlo
+      barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
           backgroundColor: Colors.white,
@@ -642,7 +639,8 @@ class _VenderTabState extends State<VenderTab> {
     return Colors.green.shade200;
   }
 
-  Future<void> _confirmarVenta() async {
+  // Modificación Fase 1: Se agrega el parámetro "action"
+  Future<void> _confirmarVenta(String actionType) async {
     if (_clienteSeleccionado == null || _carrito.isEmpty) return;
 
     try {
@@ -653,6 +651,7 @@ class _VenderTabState extends State<VenderTab> {
         'lineas': _carrito.map((e) => e.toVentaJson()).toList(),
         'nota': _notaController.text.trim(),
         'forzar_contado': false,
+        'action': actionType, // Se envía draft o confirm al backend
       };
 
       final respuesta = await ApiService.post('ventas', payload);
@@ -812,24 +811,62 @@ class _VenderTabState extends State<VenderTab> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: esCotizacion
-                                ? Colors.orange.shade800
-                                : const Color(0xFFD41C1C),
-                            foregroundColor: Colors.white,
+                      // Modificación Fase 1: Dos botones de confirmación
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                    color: Color(0xFF8B2B2B),
+                                  ),
+                                  foregroundColor: const Color(0xFF8B2B2B),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: _carrito.isEmpty
+                                    ? null
+                                    : () => _confirmarVenta('draft'),
+                                icon: const Icon(Icons.save_outlined),
+                                label: const Text(
+                                  'Borrador',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
                           ),
-                          onPressed: _carrito.isEmpty ? null : _confirmarVenta,
-                          child: Text(
-                            esCotizacion
-                                ? 'Generar Cotización'
-                                : 'Confirmar nota de venta',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 52,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: esCotizacion
+                                      ? Colors.orange.shade800
+                                      : const Color(0xFFD41C1C),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                onPressed: _carrito.isEmpty
+                                    ? null
+                                    : () => _confirmarVenta('confirm'),
+                                child: Text(
+                                  esCotizacion
+                                      ? 'Cotización'
+                                      : 'Confirmar Venta',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -888,7 +925,6 @@ class _VenderTabState extends State<VenderTab> {
       body: Column(
         children: [
           _buildClienteCompacto(),
-          // Se eliminó el cuadro de alerta inline de aquí para mantenerlo limpio
           if (_clienteSeleccionado != null &&
               !_clienteSeleccionado!.fichaIncompleta &&
               !_clienteSeleccionado!.bloqueado)
@@ -1427,7 +1463,6 @@ class _VenderTabState extends State<VenderTab> {
   }
 }
 
-// ... [La clase VentaOkScreen queda exactamente igual en el mismo archivo] ...
 class VentaOkScreen extends StatelessWidget {
   final String folio;
   final double total;
