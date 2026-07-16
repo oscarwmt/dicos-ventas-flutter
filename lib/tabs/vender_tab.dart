@@ -943,56 +943,133 @@ class _VenderTabState extends State<VenderTab> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
-      child: DropdownButtonFormField<int>(
-        isExpanded: true,
-        initialValue: _clienteSeleccionado?.id,
-        decoration: const InputDecoration(
-          isDense: true,
-          labelText: 'Cliente',
-          prefixIcon: Icon(Icons.people, size: 20),
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        ),
-        items: _clientes.map((c) {
-          return DropdownMenuItem<int>(
-            value: c.id,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    c.nombre,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (c.bloqueado)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD41C1C),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'BLOQUEADO',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-              ],
+      child: Autocomplete<Cliente>(
+        displayStringForOption: (Cliente c) => c.nombre,
+        optionsBuilder: (TextEditingValue textEditingValue) {
+          // Si el campo está vacío, no mostramos nada
+          if (textEditingValue.text.isEmpty) {
+            return const Iterable<Cliente>.empty();
+          }
+          final q = textEditingValue.text.toLowerCase().trim();
+
+          // Filtramos y limitamos a 15 resultados para mantener la app ultra rápida
+          return _clientes
+              .where((c) {
+                return c.nombre.toLowerCase().contains(q) ||
+                    c.rut.toLowerCase().contains(
+                      q,
+                    ); // Permite buscar también por RUT
+              })
+              .take(15);
+        },
+        onSelected: (Cliente cliente) {
+          _seleccionarCliente(cliente);
+          FocusScope.of(context).unfocus(); // Oculta el teclado automáticamente
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          // Mantiene el nombre del cliente visible si ya se seleccionó uno
+          if (_clienteSeleccionado != null && controller.text.isEmpty) {
+            controller.text = _clienteSeleccionado!.nombre;
+          }
+
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: 'Buscar Cliente (Nombre o RUT)',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              // Botón "X" para limpiar el cliente y buscar otro nuevo
+              suffixIcon: _clienteSeleccionado != null
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        setState(() {
+                          _clienteSeleccionado = null;
+                          _productos = [];
+                          _filtrados = [];
+                          _carrito = [];
+                          _sucursales = [];
+                        });
+                        controller.clear();
+                        focusNode.requestFocus();
+                      },
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 7,
+              ),
             ),
           );
-        }).toList(),
-        onChanged: (id) {
-          if (id == null) return;
-          final cliente = _clientes.firstWhere((c) => c.id == id);
-          _seleccionarCliente(cliente);
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(8),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: 250, // Altura máxima de la caja de sugerencias
+                  maxWidth:
+                      MediaQuery.of(context).size.width -
+                      20, // Se ajusta al ancho del teléfono
+                ),
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, index) {
+                    final c = options.elementAt(index);
+                    return InkWell(
+                      onTap: () => onSelected(c),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                c.nombre,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (c.bloqueado)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD41C1C),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'BLOQUEADO',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
         },
       ),
     );
