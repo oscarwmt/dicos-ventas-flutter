@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart'; // LIBRERÍA GPS AÑADIDA
 import '../models/cliente.dart';
 import '../models/producto.dart';
 import '../models/carrito_item.dart';
@@ -639,11 +640,62 @@ class _VenderTabState extends State<VenderTab> {
     return Colors.green.shade200;
   }
 
-  // Modificación Fase 1: Se agrega el parámetro "action"
+  // GPS Silencioso para Visitas y Ventas
+  Future<Position?> _obtenerUbicacionSilenciosa() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    try {
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null; // GPS apagado
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+      if (permission == LocationPermission.deniedForever) return null;
+
+      // Tiempo límite de 5 segundos para no dejar al vendedor esperando
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Modificación Fase 1 y 3: Confirmar Venta con GPS Silencioso
   Future<void> _confirmarVenta(String actionType) async {
     if (_clienteSeleccionado == null || _carrito.isEmpty) return;
 
+    // --- INICIO BLOQUEO DE PANTALLA ---
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: CircularProgressIndicator(color: Color(0xFFD41C1C)),
+        ),
+      ),
+    );
+    // --- FIN BLOQUEO ---
+
     try {
+      // 1. CAPTURA DE GPS SILENCIOSA
+      double? lat;
+      double? lng;
+      try {
+        final position = await _obtenerUbicacionSilenciosa();
+        if (position != null) {
+          lat = position.latitude;
+          lng = position.longitude;
+        }
+      } catch (_) {}
+
+      // 2. INYECTAMOS COORDENADAS AL PAYLOAD
       final payload = {
         'partner_id': _clienteSeleccionado!.id,
         'partner_shipping_id':
@@ -651,7 +703,9 @@ class _VenderTabState extends State<VenderTab> {
         'lineas': _carrito.map((e) => e.toVentaJson()).toList(),
         'nota': _notaController.text.trim(),
         'forzar_contado': false,
-        'action': actionType, // Se envía draft o confirm al backend
+        'action': actionType,
+        'lat': lat,
+        'lng': lng,
       };
 
       final respuesta = await ApiService.post('ventas', payload);
@@ -662,20 +716,39 @@ class _VenderTabState extends State<VenderTab> {
       final tipo = respuesta['tipo'] ?? '';
       final total = (respuesta['total'] ?? 0).toDouble();
 
+      // 3. GUARDAMOS LOS NOMBRES TEMPORALMENTE
+      final nombreCliente = _clienteSeleccionado!.nombre;
+      final nombreDespacho =
+          _sucursalSeleccionada?.nombre ?? 'Dirección Principal';
+
+      // 4. RESETEAMOS TODO EL ESTADO PARA UNA NUEVA VENTA LIMPIA
       setState(() {
-        _carrito.clear();
+        _clienteSeleccionado = null;
+        _sucursalSeleccionada = null;
+        _sucursales = [];
+        _productos = [];
+        _filtrados = [];
+        _carrito = [];
+        _categoria = '';
+        _marca = '';
+        _soloStock = false;
+        _notaController.clear();
+        _buscarController.clear();
       });
 
+      // 5. CERRAMOS LA RUEDA DE CARGA Y EL MODAL
+      Navigator.pop(context);
       Navigator.pop(context);
 
+      // 6. ENVIAMOS LAS VARIABLES TEMPORALES A LA PANTALLA DE ÉXITO
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => VentaOkScreen(
             folio: folio,
             total: total,
-            cliente: _clienteSeleccionado!.nombre,
-            despacho: _sucursalSeleccionada?.nombre ?? 'Dirección Principal',
+            cliente: nombreCliente,
+            despacho: nombreDespacho,
             esCotizacion: tipo != 'sale',
           ),
         ),
@@ -683,10 +756,180 @@ class _VenderTabState extends State<VenderTab> {
     } catch (e) {
       if (!mounted) return;
 
+      Navigator.pop(context);
+
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
           title: const Text('Error al grabar'),
+          content: Text(e.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // --- NUEVAS FUNCIONES PARA VISITAS SIN VENTA ---
+  void _mostrarModalSinVenta() {
+    String motivoSeleccionado = 'Local cerrado';
+    final TextEditingController obsController = TextEditingController();
+    final List<String> motivos = [
+      'Local cerrado',
+      'Sin dinero / Deuda',
+      'Tiene stock suficiente',
+      'No está el encargado',
+      'Compró a la competencia',
+      'Otro',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              left: 20,
+              right: 20,
+              top: 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Registrar Visita sin Venta',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: motivoSeleccionado,
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo principal',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: motivos
+                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .toList(),
+                  onChanged: (v) =>
+                      setModalState(() => motivoSeleccionado = v!),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: obsController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Observaciones (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey.shade800,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context); // Cierra el modal
+                      _registrarVisitaSinVenta(
+                        motivoSeleccionado,
+                        obsController.text.trim(),
+                      );
+                    },
+                    child: const Text(
+                      'Guardar Visita y Ubicación',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _registrarVisitaSinVenta(
+    String motivo,
+    String observaciones,
+  ) async {
+    if (_clienteSeleccionado == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator(color: Colors.grey)),
+      ),
+    );
+
+    try {
+      double? lat;
+      double? lng;
+      try {
+        final position = await _obtenerUbicacionSilenciosa();
+        if (position != null) {
+          lat = position.latitude;
+          lng = position.longitude;
+        }
+      } catch (_) {}
+
+      final payload = {
+        'partner_id': _clienteSeleccionado!.id,
+        'motivo': motivo,
+        'observaciones': observaciones,
+        'latitud': lat,
+        'longitud': lng,
+      };
+
+      await ApiService.post('visitas', payload);
+
+      if (!mounted) return;
+      Navigator.pop(context); // Cierra la rueda
+
+      // Limpia todo para el siguiente cliente
+      setState(() {
+        _clienteSeleccionado = null;
+        _sucursalSeleccionada = null;
+        _sucursales = [];
+        _productos = [];
+        _filtrados = [];
+        _carrito = [];
+        _categoria = '';
+        _marca = '';
+        _soloStock = false;
+        _notaController.clear();
+        _buscarController.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Visita registrada exitosamente en Odoo',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Error'),
           content: Text(e.toString()),
           actions: [
             TextButton(
@@ -811,7 +1054,6 @@ class _VenderTabState extends State<VenderTab> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      // Modificación Fase 1: Dos botones de confirmación
                       Row(
                         children: [
                           Expanded(
@@ -946,29 +1188,27 @@ class _VenderTabState extends State<VenderTab> {
       child: Autocomplete<Cliente>(
         displayStringForOption: (Cliente c) => c.nombre,
         optionsBuilder: (TextEditingValue textEditingValue) {
-          // Si el campo está vacío, no mostramos nada
           if (textEditingValue.text.isEmpty) {
             return const Iterable<Cliente>.empty();
           }
           final q = textEditingValue.text.toLowerCase().trim();
 
-          // Filtramos y limitamos a 15 resultados para mantener la app ultra rápida
           return _clientes
               .where((c) {
                 return c.nombre.toLowerCase().contains(q) ||
-                    c.rut.toLowerCase().contains(
-                      q,
-                    ); // Permite buscar también por RUT
+                    c.rut.toLowerCase().contains(q);
               })
               .take(15);
         },
         onSelected: (Cliente cliente) {
           _seleccionarCliente(cliente);
-          FocusScope.of(context).unfocus(); // Oculta el teclado automáticamente
+          FocusScope.of(context).unfocus();
         },
         fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-          // Mantiene el nombre del cliente visible si ya se seleccionó uno
-          if (_clienteSeleccionado != null && controller.text.isEmpty) {
+          // --- CLAVE PARA LIMPIAR EL TEXTO ---
+          if (_clienteSeleccionado == null) {
+            controller.clear();
+          } else if (controller.text.isEmpty) {
             controller.text = _clienteSeleccionado!.nombre;
           }
 
@@ -979,7 +1219,6 @@ class _VenderTabState extends State<VenderTab> {
               isDense: true,
               labelText: 'Buscar Cliente (Nombre o RUT)',
               prefixIcon: const Icon(Icons.search, size: 20),
-              // Botón "X" para limpiar el cliente y buscar otro nuevo
               suffixIcon: _clienteSeleccionado != null
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
@@ -1012,10 +1251,8 @@ class _VenderTabState extends State<VenderTab> {
               borderRadius: BorderRadius.circular(8),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: 250, // Altura máxima de la caja de sugerencias
-                  maxWidth:
-                      MediaQuery.of(context).size.width -
-                      20, // Se ajusta al ancho del teléfono
+                  maxHeight: 250,
+                  maxWidth: MediaQuery.of(context).size.width - 20,
                 ),
                 child: ListView.separated(
                   padding: EdgeInsets.zero,
@@ -1490,6 +1727,7 @@ class _VenderTabState extends State<VenderTab> {
 
   Widget _buildBarraCarrito() {
     final esCotizacion = _clienteSeleccionado?.bloqueado == true;
+    final bool clienteSeleccionado = _clienteSeleccionado != null;
 
     return Container(
       color: Colors.white,
@@ -1511,29 +1749,51 @@ class _VenderTabState extends State<VenderTab> {
             ],
           ),
           const SizedBox(height: 6),
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: esCotizacion
-                    ? Colors.orange.shade800
-                    : const Color(0xFFD41C1C),
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+
+          if (clienteSeleccionado && _cantidadCarrito == 0)
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade700,
+                  side: BorderSide(color: Colors.grey.shade400, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.location_off_outlined),
+                label: const Text(
+                  'Registrar Visita Sin Venta',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                onPressed: _mostrarModalSinVenta,
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: esCotizacion
+                      ? Colors.orange.shade800
+                      : const Color(0xFFD41C1C),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _cantidadCarrito == 0 ? null : _mostrarCarrito,
+                child: Text(
+                  esCotizacion
+                      ? 'Ver carrito (Cotización)'
+                      : 'Ver carrito y confirmar',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
-              onPressed: _cantidadCarrito == 0 ? null : _mostrarCarrito,
-              child: Text(
-                esCotizacion
-                    ? 'Ver carrito (Cotización)'
-                    : 'Ver carrito y confirmar',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
             ),
-          ),
         ],
       ),
     );
