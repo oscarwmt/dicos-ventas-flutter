@@ -776,15 +776,17 @@ class _VenderTabState extends State<VenderTab> {
 
   // --- NUEVAS FUNCIONES PARA VISITAS SIN VENTA ---
   void _mostrarModalSinVenta() {
-    String motivoSeleccionado = 'Local cerrado';
+    // 1. Actualizamos el valor por defecto para que coincida exactamente
+    String motivoSeleccionado = 'Local Cerrado';
     final TextEditingController obsController = TextEditingController();
+
+    // 2. Alineamos la lista exacta de motivos con Odoo Studio
     final List<String> motivos = [
-      'Local cerrado',
-      'Sin dinero / Deuda',
-      'Tiene stock suficiente',
-      'No está el encargado',
-      'Compró a la competencia',
-      'Otro',
+      'Local Cerrado',
+      'Sin Capacidad de Compra (sin dinero)',
+      'Cliente Bloqueado',
+      'Tiene Stock suficiente',
+      'No está el encargado de compras',
     ];
 
     showModalBottomSheet(
@@ -814,8 +816,19 @@ class _VenderTabState extends State<VenderTab> {
                     labelText: 'Motivo principal',
                     border: OutlineInputBorder(),
                   ),
+                  // Usamos la versión de IsDense para evitar que textos largos rompan el diseño
+                  isExpanded: true,
                   items: motivos
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                      .map(
+                        (m) => DropdownMenuItem(
+                          value: m,
+                          child: Text(
+                            m,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) =>
                       setModalState(() => motivoSeleccionado = v!),
